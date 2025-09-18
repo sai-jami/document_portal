@@ -18,10 +18,10 @@
           { "name": "LANGCHAIN_PROJECT", "value": "DOCUMENT PORTAL" }
         ],
         "secrets": [
-          { "name": "GROQ_API_KEY",      "valueFrom": "prod/document-portal:GROQ_API_KEY" },
-          { "name": "HF_TOKEN",          "valueFrom": "prod/document-portal:HF_TOKEN" },
-          { "name": "GOOGLE_API_KEY",    "valueFrom": "prod/document-portal:GOOGLE_API_KEY" },
-          { "name": "LANGCHAIN_API_KEY", "valueFrom": "prod/document-portal:LANGCHAIN_API_KEY" }
+          { "name": "GROQ_API_KEY",      "valueFrom": "arn:aws:secretsmanager:ap-south-1:217777498407:secret:prod/document-portal-TgMyqX:GROQ_API_KEY::" },
+          { "name": "HF_TOKEN",          "valueFrom": "arn:aws:secretsmanager:ap-south-1:217777498407:secret:prod/document-portal-TgMyqX:HF_TOKEN::" },
+          { "name": "GOOGLE_API_KEY",    "valueFrom": "arn:aws:secretsmanager:ap-south-1:217777498407:secret:prod/document-portal-TgMyqX:GOOGLE_API_KEY::" },
+          { "name": "LANGCHAIN_API_KEY", "valueFrom": "arn:aws:secretsmanager:ap-south-1:217777498407:secret:prod/document-portal-TgMyqX:LANGCHAIN_API_KEY::" }
         ],
         "logConfiguration": {
           "logDriver": "awslogs",
