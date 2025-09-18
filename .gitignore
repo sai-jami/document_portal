@@ -58,6 +58,9 @@ logs/
 faiss_index/
 *.log
 
+# Infrastructure files with sensitive data
+infrastructure/commands.txt
+
 # Jupyter Notebook
 .ipynb_checkpoints
 
