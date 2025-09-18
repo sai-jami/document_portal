@@ -80,6 +80,14 @@ Resources:
                   - ecr:PutImage
                   - ecr:BatchGetImage
                 Resource: !Sub "arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/${EcrRepoName}"
+        - PolicyName: secrets-manager-access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                Resource: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:prod/document-portal*"
 
 Outputs:
   RoleArn:
