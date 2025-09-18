@@ -1,0 +1,234 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Minimal ECS Fargate + ECR + VPC (public subnets, no ALB) with Secrets Manager wiring
+
+Parameters:
+  EcrRepoName:
+    Type: String
+    Default: documentportal
+  ImageUrl:
+    Type: String
+    Default: public.ecr.aws/amazonlinux/amazonlinux:2023
+  Cpu:
+    Type: String
+    Default: "1024"     # 1 vCPU
+  Memory:
+    Type: String
+    Default: "2048"     # 2 GB
+  AppSecretName:
+    Type: String
+    Default: prod/document-portal   # JSON secret that will hold your API keys
+
+Resources:
+  # ---------------- VPC + Networking ----------------
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+
+  IGW:
+    Type: AWS::EC2::InternetGateway
+
+  IGWAttach:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref IGW
+
+  PubRt:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+
+  PubRtDefault:
+    Type: AWS::EC2::Route
+    DependsOn: IGWAttach
+    Properties:
+      RouteTableId: !Ref PubRt
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref IGW
+
+  SubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.1.0/24
+      MapPublicIpOnLaunch: true
+      AvailabilityZone: !Select [0, !GetAZs '']
+
+  SubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.2.0/24
+      MapPublicIpOnLaunch: true
+      AvailabilityZone: !Select [1, !GetAZs '']
+
+  AssocA:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref SubnetA
+      RouteTableId: !Ref PubRt
+
+  AssocB:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref SubnetB
+      RouteTableId: !Ref PubRt
+
+  AppSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow inbound 8080
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 8080
+          ToPort: 8080
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+
+  # ---------------- Logs ----------------
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /ecs/documentportal
+      RetentionInDays: 14
+
+  # ---------------- ECR + ECS ----------------
+  ECR:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Ref EcrRepoName
+      ImageTagMutability: MUTABLE
+      ImageScanningConfiguration: { ScanOnPush: true }
+
+  Cluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: document-portal-cluster
+
+  # ---------------- IAM (Execution Role) ----------------
+  ExecRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: ecsTaskExecutionRole
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: ecs-tasks.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      Policies:
+        - PolicyName: ecs-task-secrets-access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # Read the specific app secret
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: !Ref AppSecret
+              # If you ever fetch SSM params from the task, keep this; harmless otherwise
+              - Effect: Allow
+                Action: ssm:GetParameters
+                Resource: "*"
+              # Optional if you don't pre-create the log group
+              - Effect: Allow
+                Action: logs:CreateLogGroup
+                Resource: "*"
+              # If you encrypt the secret with a CMK (not the default AWS-managed key),
+              # uncomment and set your key ARN:
+              # - Effect: Allow
+              #   Action: kms:Decrypt
+              #   Resource: arn:aws:kms:ap-south-1:{{account}}:key/<YOUR_KEY_ID>
+              #   Condition:
+              #     StringEquals:
+              #       kms:ViaService: secretsmanager.ap-south-1.amazonaws.com
+
+  # ---------------- Secrets Manager (JSON secret) ----------------
+  AppSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Ref AppSecretName
+      Description: "Document Portal API keys as JSON (keys: GROQ_API_KEY, HF_TOKEN, GOOGLE_API_KEY, LANGCHAIN_API_KEY)"
+      SecretString: "{}"   # set real values after stack create
+
+  # ---------------- Task Definition + Service ----------------
+  TaskDef:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: documentportaltd
+      Cpu: !Ref Cpu
+      Memory: !Ref Memory
+      NetworkMode: awsvpc
+      RequiresCompatibilities: [FARGATE]
+      ExecutionRoleArn: !GetAtt ExecRole.Arn
+      ContainerDefinitions:
+        - Name: document-portal-container
+          Image: !Ref ImageUrl
+          Essential: true
+          PortMappings:
+            - ContainerPort: 8080
+              Protocol: tcp
+          Environment:
+            - Name: ENV
+              Value: production
+            - Name: LANGCHAIN_PROJECT
+              Value: DOCUMENT PORTAL
+          # Map JSON keys from the secret -> env vars
+          Secrets:
+            - Name: GROQ_API_KEY
+              ValueFrom: !Sub "${AppSecret}:GROQ_API_KEY::"
+            - Name: HF_TOKEN
+              ValueFrom: !Sub "${AppSecret}:HF_TOKEN::"
+            - Name: GOOGLE_API_KEY
+              ValueFrom: !Sub "${AppSecret}:GOOGLE_API_KEY::"
+            - Name: LANGCHAIN_API_KEY
+              ValueFrom: !Sub "${AppSecret}:LANGCHAIN_API_KEY::"
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: ecs
+
+  Service:
+    Type: AWS::ECS::Service
+    DependsOn: IGWAttach
+    Properties:
+      ServiceName: document-portal-service
+      Cluster: !Ref Cluster
+      LaunchType: FARGATE
+      DesiredCount: 0            # keep 0 until CI/CD pushes your image
+      PlatformVersion: LATEST
+      DeploymentConfiguration:
+        DeploymentCircuitBreaker: { Enable: true, Rollback: true }
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          Subnets: [!Ref SubnetA, !Ref SubnetB]
+          SecurityGroups: [!Ref AppSG]
+      TaskDefinition: !Ref TaskDef
+
+Outputs:
+  ClusterName:
+    Value: !Ref Cluster
+  ServiceName:
+    Value: !Ref Service
+  EcrRepoName:
+    Value: !Ref ECR
+  LogGroupName:
+    Value: !Ref LogGroup
+  SecretArn:
+    Value: !Ref AppSecret
+  ExecutionRoleArn:
+    Value: !GetAtt ExecRole.Arn
+  Subnets:
+    Value: !Join [",", [!Ref SubnetA, !Ref SubnetB]]
+  SecurityGroupId:
+    Value: !Ref AppSG

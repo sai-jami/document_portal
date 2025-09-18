@@ -1,0 +1,87 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: OIDC role for GitHub Actions to deploy to ECS/ECR (scoped to one repo/branch)
+
+Parameters:
+  GitHubOrg:
+    Type: String
+    Default: sai-jami
+    Description: GitHub org or username
+  GitHubRepo:
+    Type: String
+    Default: document-portal
+    Description: GitHub repository name
+  TaskExecutionRoleName:
+    Type: String
+    Default: ecsTaskExecutionRole
+    Description: ECS Task Execution Role name (used by Fargate to pull from ECR & send logs)
+  EcrRepoName:
+    Type: String
+    Default: documentportal
+    Description: ECR repository used by CI to push images
+
+Resources:
+  # If your account already has this provider, remove this resource before deploying.
+  GitHubOidcProvider:
+    Type: AWS::IAM::OIDCProvider
+    Properties:
+      Url: https://token.actions.githubusercontent.com
+      ClientIdList:
+        - sts.amazonaws.com
+      # ThumbprintList omitted intentionally (IAM can manage it automatically)
+
+  GitHubDeployRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: github-actions-deploy
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !Ref GitHubOidcProvider
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+              # Limit to pushes on the 'main' branch for this repo
+              StringLike:
+                token.actions.githubusercontent.com:sub: !Sub "repo:${GitHubOrg}/${GitHubRepo}:ref:refs/heads/main"
+      Policies:
+        - PolicyName: ecs-deploy-minimum
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ecs:RegisterTaskDefinition
+                  - ecs:UpdateService
+                  - ecs:DescribeServices
+                  - ecs:DescribeTaskDefinition
+                Resource: "*"
+              - Effect: Allow
+                Action: iam:PassRole
+                Resource: !Sub "arn:aws:iam::${AWS::AccountId}:role/${TaskExecutionRoleName}"
+                Condition:
+                  StringEquals:
+                    iam:PassedToService: ecs-tasks.amazonaws.com
+        - PolicyName: ecr-push-minimal
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: ecr:GetAuthorizationToken
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:InitiateLayerUpload
+                  - ecr:UploadLayerPart
+                  - ecr:CompleteLayerUpload
+                  - ecr:PutImage
+                  - ecr:BatchGetImage
+                Resource: !Sub "arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/${EcrRepoName}"
+
+Outputs:
+  RoleArn:
+    Value: !GetAtt GitHubDeployRole.Arn
+    Description: IAM role ARN to set as GitHub secret AWS_ROLE_TO_ASSUME

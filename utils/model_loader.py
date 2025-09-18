@@ -15,47 +15,63 @@ class ApiKeyManager:
         "GROQ_API_KEY",
     ]
     
+    # Optional keys that might be used in some deployments
+    OPTIONAL_KEYS = [
+        "HF_TOKEN",
+        "LANGCHAIN_API_KEY",
+    ]
+    
     def __init__(self):
         self.api_key = {}
 
+        # Method 1: Try to load from JSON environment variable (for local development)
         raw = os.getenv('API_KEY')
-
         if raw:
-
-            try :
+            try:
                 parsed = json.loads(raw)
-
                 if not isinstance(parsed, dict):
                     raise ValueError("API_KEY must be a valid JSON object")
-
                 self.api_key = parsed
-
-                log.info("API_KEYS parsed successfully")
+                log.info("API_KEYS parsed from JSON successfully")
             except Exception as e:
                 log.warning("Failed to parse API_KEYS as JSON", error=str(e))    
         
-        for key in self.REQUIRED_KEYS:
+        # Method 2: Load individual environment variables (for production/AWS Secrets Manager)
+        all_keys = self.REQUIRED_KEYS + self.OPTIONAL_KEYS
+        for key in all_keys:
             if not self.api_key.get(key):
                 env_val = os.getenv(key)
                 if env_val:
                     self.api_key[key] = env_val
                     log.info(f"API_KEY {key} loaded from environment variables")
 
+        # Check for missing required keys
         missing = [key for key in self.REQUIRED_KEYS if not self.api_key.get(key)]
         if missing:
-            log.warning(f"Missing API_KEYS", missing=missing)
-            raise DocumentPortalException("Missing API_KEYS", missing)
+            log.warning(f"Missing required API_KEYS", missing=missing)
+            raise DocumentPortalException("Missing required API_KEYS", missing)
 
-        log.info("API_KEYS loaded successfully",key={k:v[:6]+"..." for k,v in self.api_key.items()})
+        # Log loaded keys (with masked values for security)
+        loaded_keys = {k: v[:6]+"..." if len(v) > 6 else "***" for k, v in self.api_key.items()}
+        log.info("API_KEYS loaded successfully", keys=loaded_keys)
                 
         
 
-    def get(self, key:str):
+    def get(self, key: str):
+        """Get an API key. Raises KeyError if not found."""
         val = self.api_key.get(key)
         if not val:
             log.warning(f"API_KEY {key} not found", key=key)
             raise KeyError(f"API_KEY {key} not found")
         return val
+    
+    def get_optional(self, key: str, default: str = None):
+        """Get an optional API key. Returns default if not found."""
+        return self.api_key.get(key, default)
+    
+    def has_key(self, key: str) -> bool:
+        """Check if an API key is available."""
+        return key in self.api_key and bool(self.api_key[key])
 
 class ModelLoader:
 

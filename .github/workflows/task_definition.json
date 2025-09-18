@@ -1,0 +1,37 @@
+{
+    "family": "documentportaltd",
+    "networkMode": "awsvpc",
+    "requiresCompatibilities": ["FARGATE"],
+    "cpu": "1024",
+    "memory": "2048",
+    "executionRoleArn": "arn:aws:iam::217777498407:role/ecsTaskExecutionRole",
+    "containerDefinitions": [
+      {
+        "name": "document-portal-container",
+        "image": "REPLACED_BY_GITHUB_ACTION",
+        "essential": true,
+        "portMappings": [
+          { "containerPort": 8080, "protocol": "tcp" }
+        ],
+        "environment": [
+          { "name": "ENV", "value": "production" },
+          { "name": "LANGCHAIN_PROJECT", "value": "DOCUMENT PORTAL" }
+        ],
+        "secrets": [
+          { "name": "GROQ_API_KEY",      "valueFrom": "prod/document-portal:GROQ_API_KEY::" },
+          { "name": "HF_TOKEN",          "valueFrom": "prod/document-portal:HF_TOKEN::" },
+          { "name": "GOOGLE_API_KEY",    "valueFrom": "prod/document-portal:GOOGLE_API_KEY::" },
+          { "name": "LANGCHAIN_API_KEY", "valueFrom": "prod/document-portal:LANGCHAIN_API_KEY::" }
+        ],
+        "logConfiguration": {
+          "logDriver": "awslogs",
+          "options": {
+            "awslogs-group": "/ecs/documentportal",
+            "awslogs-region": "ap-south-1",
+            "awslogs-stream-prefix": "ecs"
+          }
+        }
+      }
+    ]
+  }
+  
