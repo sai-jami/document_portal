@@ -8,7 +8,7 @@ Parameters:
     Description: GitHub org or username
   GitHubRepo:
     Type: String
-    Default: document-portal
+    Default: document_portal
     Description: GitHub repository name
   TaskExecutionRoleName:
     Type: String

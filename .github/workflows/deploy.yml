@@ -48,6 +48,9 @@ jobs:
           echo "sha=${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}" >> "$GITHUB_OUTPUT"
           echo "latest=${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest" >> "$GITHUB_OUTPUT"
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
       - name: Build & push image
         uses: docker/build-push-action@v5
         with:
