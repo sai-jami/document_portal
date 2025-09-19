@@ -108,17 +108,16 @@ class ModelLoader:
 
         if provider == "google":
             return ChatGoogleGenerativeAI(
-                model_name=model_name,
+                model=model_name,
                 temperature=temperature,
                 max_tokens=max_tokens,
-                api_key=self.api_key_manager.get("GOOGLE_API_KEY")
+                google_api_key=self.api_key_manager.get("GOOGLE_API_KEY")
             )
         elif provider == "groq":
             return ChatGroq(
-                model_name=model_name,
+                model=model_name,
                 temperature=temperature,
                 api_key=self.api_key_manager.get("GROQ_API_KEY")
-
             )
 
         else:
