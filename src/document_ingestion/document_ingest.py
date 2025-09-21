@@ -133,7 +133,77 @@ class DocHandler:
             log.error("Failed to read PDF", error=str(e), session_id=self.session_id, pdf_path=pdf_path)
             raise DocumentPortalException(f"Could not process PDF: {pdf_path}", e) from e
 
-            
+class DocumentComparator:
+
+    def __init__(self, base_dir:str = "data/document_compare", session_id:Optional[str] = None):
+        self.base_dir = base_dir
+        self.session_id = session_id or generate_session_id("session")
+        self.session_path = os.path.join(self.base_dir, self.session_id)
+        os.makedirs(self.session_path, exist_ok=True)
+        log.info("DocumentComparator initialized", session_id=self.session_id, session_path=self.session_path)
+        
+    def save_uploaded_files(self, reference_file:UploadFile, actual_file:UploadFile):
+        try:
+            reference_path = os.path.join(self.session_path, reference_file.filename)
+            actual_path = os.path.join(self.session_path, actual_file.filename)
+            for fobj, out in ((reference_file, reference_path), (actual_file, actual_path)):
+                if not fobj.name.lower().endswith(".pdf"):
+                    raise ValueError("Only PDF files are allowed.")
+                with open(out, "wb") as f:
+                    if hasattr(fobj, "read"):
+                        f.write(fobj.read())
+                    else:
+                        f.write(fobj.getbuffer())
+
+            log.info("Files saved", reference=str(reference_path), actual=str(actual_path), session=self.session_id)
+            return reference_path, actual_path
+
+        except Exception as e:
+            log.error("Failed to save files", error=str(e), session=self.session_id)
+            raise DocumentPortalException(f"Failed to save files: {str(e)}", sys) from e
+
+    def read_pdf(self, pdf_path:str) -> str:
+
+        try:
+            with fitz.open(pdf_path) as doc:
+                if doc.is_encrypted:
+                    raise ValueError("Encrypted PDFs are not supported.")
+                parts = []
+                for page_num in range(doc.page_count):
+                    page = doc.load_page(page_num)
+                    text = page.get_text() #type: ignore
+                    if text.strip():
+                        parts.append(f"\n --- Page {page_num + 1} --- \n{text}")
+            log.info("PDF read successfully", file=str(pdf_path), pages=len(parts))
+            return "\n".join(parts)
+        except Exception as e:
+            log.error("Failed to read PDF", error=str(e), session=self.session_id, pdf_path=pdf_path)
+            raise DocumentPortalException(f"Failed to read PDF: {str(e)}", sys) from e
+
+    def combine_documents(self) -> str:
+        try:
+            docs = []
+            for file in sorted(self.session_path.iterdir()):
+                if file.is_file() and file.suffix.lower() == ".pdf":
+                    content = self.read_pdf(str(file))
+                    docs.append(f"Document: {file.name}\n{content}")
+
+            combined_text = = "\n\n".join(docs)
+            log.info("Documents combined", count=len(doc_parts), session=self.session_id)
+            return combined_text
+        except Exception as e:
+            log.error("Failed to combine documents", error=str(e), session=self.session_id)
+            raise DocumentPortalException(f"Failed to combine documents: {str(e)}", sys) from e
+
+    def cleanup(self):
+        try:
+            sessions = sorted([f for f in self.base_dir.iterdir() if f.is_dir()], reverse=True)
+            for folder in sessions[keep_latest:]:
+                shutil.rmtree(folder, ignore_errors=True)
+                log.info("Old session folder deleted", path=str(folder))
+        except Exception as e:
+            log.error("Error cleaning old sessions", error=str(e))
+            raise DocumentPortalException("Error cleaning old sessions", e) from e
 
         
         

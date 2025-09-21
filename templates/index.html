@@ -18,6 +18,7 @@
     </div>
     <nav class="mode-switch">
       <button class="tab-btn active" data-tab="analysis">Document Analysis</button>
+      <button class="tab-btn" data-tab="compare">Document Compare</button>
     </nav>
   </header>
 
@@ -44,6 +45,42 @@
       </div>
     </section>
 
+    <!-- ============== COMPARE ============== -->
+    <section id="tab-compare" class="tab-panel">
+      <div class="card">
+        <h2>🆚 Compare Two Documents</h2>
+        <p class="muted">Upload a reference PDF and an actual PDF to see page-wise differences.</p>
+        <form id="form-compare" class="form-grid-2" onsubmit="return false;">
+          <div class="field">
+            <label for="cmp-ref">Reference PDF</label>
+            <input id="cmp-ref" type="file" accept=".pdf" required />
+          </div>
+          <div class="field">
+            <label for="cmp-act">Actual PDF</label>
+            <input id="cmp-act" type="file" accept=".pdf" required />
+          </div>
+          <div class="actions span-2">
+            <button id="btn-compare" class="btn primary">Compare</button>
+          </div>
+        </form>
+
+        <div id="cmp-result" class="result-block">
+          <h3>Comparison Result</h3>
+          <div class="table-wrap">
+            <table id="cmp-table">
+              <thead>
+                <tr><th>Page</th><th>Changes</th></tr>
+              </thead>
+              <tbody>
+                <tr><td colspan="2" class="muted center">No data yet.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    
   </main>
 
   <footer class="app-footer">
@@ -90,40 +127,46 @@
     }
   });
 
-  
+  // ===== COMPARE =====
+  document.getElementById("btn-compare").addEventListener("click", async () => {
+    const ref   = document.getElementById("cmp-ref").files[0];
+    const act   = document.getElementById("cmp-act").files[0];
+    const tbody = document.querySelector("#cmp-table tbody");
 
-  document.getElementById("btn-ask").addEventListener("click", async () => {
-    const q        = document.getElementById("chat-q").value.trim();
-    const ans      = document.getElementById("chat-answer");
-    const useSess  = document.getElementById("chat-sessionized").checked;
-    const k        = +document.getElementById("chat-k").value || 5;
-
-    if (!q) { ans.textContent = "Please enter a question."; return; }
-    if (useSess && !currentSession) {
-      ans.textContent = "Build the index first (session-based mode is ON).";
+    if (!ref || !act) {
+      tbody.innerHTML = `<tr><td colspan="2" class="muted center">Upload both PDFs.</td></tr>`;
       return;
     }
 
     try {
-      ans.textContent = "Thinking…";
+      tbody.innerHTML = `<tr><td colspan="2" class="center">Comparing…</td></tr>`;
 
       const fd = new FormData();
-      fd.append("question", q);
-      fd.append("use_session_dirs", useSess ? "true" : "false");
-      fd.append("k", String(k));
-      if (useSess && currentSession) fd.append("session_id", currentSession);
+      fd.append("reference", ref); // <-- must be 'reference'
+      fd.append("actual", act);    // <-- must be 'actual'
 
-      const res = await fetch(`${API_BASE}/chat/query`, { method: "POST", body: fd });
+      const res = await fetch(`${API_BASE}/compare`, { method: "POST", body: fd });
       if (!res.ok) {
         const err = await res.json().catch(()=>({detail:res.statusText}));
         throw new Error(err.detail || `HTTP ${res.status}`);
       }
-      const json = await res.json(); // { answer, ... }
-      ans.textContent = json.answer || "No answer.";
+      const json = await res.json(); // { rows: [...] }
+      const rows = json.rows || [];
+      if (!rows.length) {
+        tbody.innerHTML = `<tr><td colspan="2" class="muted center">No differences found.</td></tr>`;
+        return;
+      }
+      tbody.innerHTML = rows.map(r => {
+        const page = r.Page ?? r.page ?? "";
+        const chg  = r.Changes ?? r.changes ?? "";
+        return `<tr><td>${page}</td><td>${chg}</td></tr>`;
+      }).join("");
     } catch (e) {
-      ans.textContent = "Query failed: " + (e.message || e);
+      tbody.innerHTML = `<tr><td colspan="2" class="muted center">Error: ${e.message || e}</td></tr>`;
     }
   });
+
+  
 </script>
 
 </body>

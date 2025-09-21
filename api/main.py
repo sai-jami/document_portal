@@ -8,8 +8,9 @@ from fastapi.responses import JSONResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
-from src.document_ingestion.document_ingest import DocHandler
+from src.document_ingestion.document_ingest import (DocHandler, DocumentComparator)
 from src.document_analyser.document_analysis import DocumentAnalysis
+from src.document_compare.document_comparator import DocumentComparatorLLM
 from utils.document_ops import FastAPIFileAdapter, read_pdf_via_handler
 from logger import GLOBAL_LOGGER as log
 
@@ -62,6 +63,31 @@ async def analyze(file: UploadFile = File(...)) -> Any:
     except Exception as e:
         log.error(f"Error analyzing file: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/compare")
+async def compare(reference_file: UploadFile = File(...), actual_file: UploadFile = File(...)) -> Any:
+
+    try:
+        log.info(f"Received files for comparison: {reference_file.filename} and {actual_file.filename}")
+        dc = DocumentComparator()
+        reference_path, actual_path = dc.save_uploaded_files(
+            
+            FastAPIFileAdapter(reference_file),
+             FastAPIFileAdapter(actual_file))
+        _ = reference_path, actual_path
+
+        combined_docs = dc.combine_documents()
+        comp = DocumentComparatorLLM()
+        df = comp.compare_documents(combined_docs)
+        log.info("Document comparison completed.")
+        return {"rows": df.to_dict(orient="records"), "session_id": dc.session_id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        log.exception("Comparison failed")
+        raise HTTPException(status_code=500, detail=f"Comparison failed: {e}")
+
+    
 
 
 
